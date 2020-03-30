@@ -1,0 +1,162 @@
+---
+title: "Instruções pra não se passar (que nem um otário) usando o shapeR"
+author: " "
+date: "2020"
+output: html_document
+---
+
+
+O ano é 2020, o mundo passa por mais uma grande pandemia - talvez a maior desde a gripe espanhola ou algo do tipo. Paralelo a isso, um jovem cientista enfrenta - além da quarentena - mais uma vez a difícil tarefa de executar códigos em um dos ambientes mais inóspitos do nosso tempo...o R.  
+Esse guia serve para ajudar o nosso jovem cientista - ou qualquer outra classe de aventureir@ - a trilhar essa jornada passando o mínimo de raiva possível quando for trabalhar com o pacote shapeR.  
+shapeR é um pacote que serve pra (basicamente) fazer análise de contorno em imagens de otólitos (ou qualquer outra imagem 2D). Pra isso você vai precisar das imagens (óbvio) e de dados morfométricos (comprimento e peso) dos indivíduos "donos" dessas imagens.
+
+
+```{r setup, include=F}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r eval=FALSE}
+library (shapeR)
+```
+#### Pacotes adicionais
+
+```{r eval=FALSE}
+library (gplots)
+library (jpeg)
+library (pixmap)
+library (wavethresh)
+```
+
+#### caso precise dar uma olhada na planilha e tal... 
+```{r eval=FALSE}
+otos_df = read.csv("otos_tai.csv")
+```
+
+#### Cria o objeto pra detectar os contornos
+```{r eval=FALSE}
+shape = shapeR ("/home/ivao/Documentos/análise_otos","otos_tai.csv")
+```
+
+#### Começa a detectar os contornos
+```{r eval=FALSE}
+shape = detect.outline (shape,threshold=0.2,write.outline.w.org=TRUE)
+```
+
+#### Essa linha vai tirar o ruído das imagens
+```{r eval=FALSE}
+shape = smoothout (shape,n=364)
+```
+
+#### Coeficientes de forma (harmônicas, wavelets e tal...)
+```{r eval=FALSE}
+shape = generateShapeCoefficients (shape)
+```
+
+#### Cria a lista geral com todos os dados (às vezes rola um erro pq o nome das pastas pode estar errado)
+```{r eval=FALSE}
+shape = enrich.master.list (shape)
+```
+
+#### Se aparecer valores NA, veja se na coluna com nome das imagens tem alguma imagem com a extensão .jpg
+```{r eval=FALSE}
+tapply (getMeasurements (shape)$otolith.area, getMasterlist (shape)$pop, mean)
+```
+
+#### Gráfico de contornos baseados nos coef de wavelet
+```{r eval=FALSE}
+plotWaveletShape(shape, "pop", show.angle = F, lwd =2,lty = 1)
+```
+
+#### Gráfico de contornos baseados nos coef de Fourier
+```{r eval=FALSE}
+plotFourierShape(shape, "pop", show.angle = F, lwd = 2, lty = 1)
+```
+
+#### Padronizar os coeficientes (Fourier e Wavelet)
+```{r eval=FALSE}
+shape = stdCoefs(shape, classes = "pop", "length_cm", bonferroni = FALSE)
+```
+
+
+#### caso queira ver as medidas básicas altura, comp., largura e perímetro dos otólitos
+```{r eval=FALSE}
+getMeasurements(shape)
+```
+
+#### Média dos valores morfométricos
+```{r eval=FALSE}
+tapply(getMeasurements(shape)$otolith.area, getMasterlist(shape)$pop, mean)
+```
+
+#### Reconstrução da outline dos otólitos pra ver a partir de qual harmônica ou wavelet fica tudo igual(?)
+```{r eval=FALSE}
+est.list = estimate.outline.reconstruction(shape)
+```
+
+#### Aqui mostra o gráfico lá da variação dos contornos e tal...
+```{r eval=FALSE}
+outline.reconstruction.plot(est.list, max.num.harmonics = 15)
+```
+
+#### Padroniza os coeficientes (fourier e wave) pelo comp dos peixes e tal... vai ser importante no futuro
+```{r eval=FALSE}
+shape = stdCoefs(shape, classes = "pop", "length_cm", bonferroni = FALSE)
+```
+
+#### Gráficos com a representação da forma média de cada grupo (população ou espécie...)
+```{r eval=FALSE}
+plotWavelet(shape, level = 5, class.name = "pop", useStdcoef = TRUE)
+```
+```{r eval=FALSE}
+plotFourier(shape, level = 5, class.name = "pop", useStdcoef = TRUE)
+```
+
+#### Caso precise exportar os dados (harmônicos, wavelets, medidas e tal) roda essa linha
+  * Cria um objeto da lista completa
+```{r eval=FALSE}
+list<-getMasterlist(shape)
+```
+
+  * Exporta no formato de sua preferência e é nóis
+```{r eval=FALSE}
+write.csv(list, "/home/ivao/Documentos/análise_otos/complete_data_morf.csv")
+```
+
+```{r eval=FALSE}
+library(vegan)
+```
+```{r eval=FALSE}
+cap.res = capscale(getStdWavelet(shape) ~ getMasterlist(shape)$pop)
+anova(cap.res, by = "terms", step = 1000)
+eig = eigenvals(cap.res,model = NULL)
+eig.ratio = eig/sum(eig)
+```
+
+#### Cria um gráfico pra ver a distribuição dos grupos
+```{r eval=FALSE}
+cluster.plot(scores(cap.res)$sites[,1:2],getMasterlist(shape)$pop,
+xlim = range(scores(cap.res)$sites[,1]),
+ylim = range(scores(cap.res)$sites[,2]),
+xlab = paste("CAP1 (",round(eig.ratio[1]*100,1),"%)",sep = ""),
+ylab = paste("CAP2 (",round(eig.ratio[2]*100,1),"%)",sep = ""), 
+plotCI = TRUE ,conf.level = 0.95,las = 1)
+```
+
+#### Essa parte pra baixo é uma LDA... mas dá pra fazer usando outros métodos
+```{r eval=FALSE}
+pop = factor(getMasterlist(shape)$pop)
+
+library (ipred)
+
+mypredict.lda <- function (object, newdata)
+  predict(object, newdata = newdata)$class
+
+stdw = getStdWavelet(shape)
+pop = factor(getMasterlist(shape)$pop)
+dd = data.frame(stdw = stdw,pop = pop)
+errorest(pop ~., data = dd, model = lda, 
+         estimator = "cv", predict = mypredict.lda)
+
+est.para = control.errorest(nboot = 1000)
+```
