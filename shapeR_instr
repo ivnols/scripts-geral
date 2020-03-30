@@ -1,0 +1,92 @@
+library(shapeR)
+
+#Pacotes adicionais
+
+library(gplots)
+library(jpeg)
+library(pixmap)
+library(wavethresh)
+
+otos_df = read.csv("otos_tai.csv")
+
+#Cria o objeto pra detectar os contornos
+shape=shapeR("/home/ivao/Documentos/análise_otos","otos_tai.csv")
+
+#Começa a detectar os contornos
+shape=detect.outline(shape,threshold=0.2,write.outline.w.org=TRUE)
+
+#essa linha vai tirar o ruído das imagens
+shape=smoothout(shape,n=364)
+
+#coeficientes de forma (harmônicas, wavelets e tal...)
+shape=generateShapeCoefficients(shape)
+
+#cria a lista geral com todos os dados (às vezes rola um erro pq o nome das pastas pode estar errado)
+shape = enrich.master.list(shape)
+
+#se aparecer valores NA, veja se na coluna com nome das imagens tem alguma imagem com a extensão .jpg
+tapply(getMeasurements(shape)$otolith.area, getMasterlist(shape)$pop, mean)
+
+#gráfico com os contornos
+plotWaveletShape(shape, "pop", show.angle = F, lwd =2,lty = 1)
+
+plotFourierShape(shape, "pop", show.angle = F, lwd = 2, lty = 1)
+
+shape = stdCoefs(shape, classes = "pop", "length_cm", bonferroni = FALSE)
+
+#caso queira ver as medidas básicas altura, comp., largura e perímetro dos otólitos
+getMeasurements(shape)
+
+#a média dos valores morfométricos
+tapply(getMeasurements(shape)$otolith.area, getMasterlist(shape)$pop, mean)
+
+#reconstrução da outline dos otólitos pra ver a partir de qual harmônica ou wavelet fica tudo igual(?)
+est.list = estimate.outline.reconstruction(shape)
+
+#aqui mostra o gráfico lá....
+outline.reconstruction.plot(est.list, max.num.harmonics = 15)
+
+#padroniza os coeficientes (fourier e wave) pelo comp dos peixes e tal...
+shape = stdCoefs(shape, classes = "pop", "length_cm", bonferroni = FALSE)
+
+
+plotWavelet(shape, level = 5, class.name = "pop", useStdcoef = TRUE)
+plotFourier(shape, level = 5, class.name = "pop", useStdcoef = TRUE)
+
+list<-getMasterlist(shape)
+write.csv(list, "/home/ivao/Documentos/análise_otos/complete_data_morf.csv")
+
+save(shape,file = "test.RData")
+
+##carregar o Vegan => 
+library(vegan)
+
+cap.res = capscale(getStdWavelet(shape) ~ getMasterlist(shape)$pop)
+
+anova(cap.res, by = "terms", step = 1000)
+
+eig = eigenvals(cap.res,model = NULL)
+eig.ratio = eig/sum(eig)
+
+#cria um cluster plot
+cluster.plot(scores(cap.res)$sites[,1:2],getMasterlist(shape)$pop,
+xlim = range(scores(cap.res)$sites[,1]),
+ylim = range(scores(cap.res)$sites[,2]),
+xlab = paste("CAP1 (",round(eig.ratio[1]*100,1),"%)",sep = ""),
+ylab = paste("CAP2 (",round(eig.ratio[2]*100,1),"%)",sep = ""), 
+plotCI = TRUE ,conf.level = 0.95,las = 1)
+
+pop = factor(getMasterlist(shape)$pop)
+
+library(ipred)
+
+mypredict.lda <- function(object, newdata)
+  predict(object, newdata = newdata)$class
+
+stdw = getStdWavelet(shape)
+pop = factor(getMasterlist(shape)$pop)
+dd = data.frame(stdw = stdw,pop = pop)
+errorest(pop ~., data = dd, model = lda, 
+         estimator = "cv", predict = mypredict.lda)
+
+est.para = control.errorest(nboot = 1000)
